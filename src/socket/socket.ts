@@ -3,6 +3,7 @@ import http from 'http'
 
 let io: Server
 const onlineUsers = new Map<string, string>()
+
 export const setupSocket = (server: http.Server) => {
   io = new Server(server, {
     cors: {
@@ -29,8 +30,11 @@ export const setupSocket = (server: http.Server) => {
       })
     })
 
-    socket.on('userOnline', (userId: string) => {
+    socket.on('userOnline', (data) => {
+      // console.log("🚀 socket.ts:54 - userId:", data);
+      const { userId } = data
       onlineUsers.set(userId, socket.id)
+      // console.log(onlineUsers)
       io.emit('updateOnlineUsers', Array.from(onlineUsers.keys()))
     })
 
@@ -40,27 +44,36 @@ export const setupSocket = (server: http.Server) => {
 
     socket.on('sendMessage', (data) => {
       const {
-        senderId,
-        senderName,
-        content,
-        groupId,
-        type,
-        replyToMessageId,
-        replyToContent,
-        replyToSenderName,
-        replyToType
+        groupId
       } = data
-
       io.to(groupId).emit('receiveMessage', {
-        content,
-        senderId,
-        senderName,
-        replyToMessageId,
-        replyToContent,
-        replyToSenderName,
-        replyToType,
-        type,
-        timestamp: new Date()
+        ...data,
+        groupId,
+        createdAt: new Date()
+      })
+    })
+
+    socket.on('deleteMessage', (data) => {
+      const {  groupId} = data
+      io.to(groupId).emit('deleteMessage', {
+        groupId,
+        ...data
+      })
+    })
+
+    socket.on('deleteMessageForMe', (data) => {
+      const { groupId } = data
+      io.to(groupId).emit('deleteMessageForMe', {
+        groupId,
+        ...data
+      })
+    })
+
+    socket.on('editMessage', (data) => {
+      const { groupId } = data
+      io.to(groupId).emit('editMessage', {
+        ...data,
+        groupId,
       })
     })
 
@@ -88,6 +101,7 @@ export const setupSocket = (server: http.Server) => {
 
     socket.on('disconnect', () => {
       for (const [userId, socketId] of onlineUsers.entries()) {
+        console.log(socket.id)
         if (socketId === socket.id) {
           onlineUsers.delete(userId)
           break

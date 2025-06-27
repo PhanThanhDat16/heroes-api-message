@@ -212,5 +212,58 @@ export const groupController = {
         message: `Internal server error: ${error}`
       })
     }
+  },
+
+  addMemberGroup: async (req: Request, res: Response) => {
+    const groupId = req.params.id
+    const userId = req.params.userId
+    try {
+      const group = await groupService.getGroupDetail(groupId)
+      if (!group) {
+        res.status(EHttpStatus.NOT_FOUND).json({
+          message: `Group not found`
+        })
+        return
+      }
+      const newMember = await groupService.addMember(groupId, userId)
+      res.status(EHttpStatus.OK).json({
+        message: 'Add member successfully',
+        data: newMember
+      })
+    } catch (error) {
+      res.status(EHttpStatus.INTERNAL_SERVER_ERROR).json({
+        message: `Internal server error: ${error}`
+      })
+    }
+  },
+
+  deleteMemberInGroup: async (req: Request, res: Response) => {
+    const groupId = req.params.id
+    const userId = req.params.memberId
+    try {
+      const group = await groupService.getGroupDetail(groupId)
+      if (!group) {
+        res.status(EHttpStatus.NOT_FOUND).json({
+          message: `Group not found`
+        })
+        return
+      }
+      const result = await groupService.deleteMemberInGroup(groupId, userId)
+
+      if (!result) {
+        res.status(EHttpStatus.OK).json({
+          message: `Member not found in group`
+        })
+        return
+      }
+      res.status(EHttpStatus.OK).json({
+        message: 'Delete successfully',
+        data: result
+      })
+    } catch (error) {
+      res.status(EHttpStatus.INTERNAL_SERVER_ERROR).json({
+        message: `Internal server error: ${error}`
+      })
+    }
   }
 }

@@ -50,8 +50,10 @@ export const groupService = {
           senderName = response.data?.data?.username || null
         }
 
+
         return {
           ...group,
+          isRead: lastMessage?.isRead ?? [],
           lastMessage: lastMessage
             ? {
                 content: lastMessage.content,
@@ -64,7 +66,7 @@ export const groupService = {
       })
     )
 
-    return result
+    return result.reverse()
     // return result.sort((a, b) => {
     //   const aTime = a.lastMessage?.createdAt ? new Date(a.lastMessage.createdAt).getTime() : 0
     //   const bTime = b.lastMessage?.createdAt ? new Date(b.lastMessage.createdAt).getTime() : 0
@@ -112,7 +114,26 @@ export const groupService = {
   },
 
   updateRoleGroup: async (groupId: string, userId: string) => {
-    const groupMember = await GroupMember.findByIdAndUpdate({groupId , userId}, {role: 'admin'}, {new : true})
+    const groupMember = await GroupMember.findByIdAndUpdate({ groupId, userId }, { role: 'admin' }, { new: true })
     return groupMember
+  },
+
+  addMember: async (groupId: string, userId: string) => {
+    const member = new GroupMember({
+      userId,
+      groupId,
+      role: 'member',
+      tags: []
+    })
+    await member.save()
+    return member
+  },
+
+  deleteMemberInGroup: async (groupId: string, userId: string) => {
+    const existingMemberInGroup = GroupMember.findByIdAndDelete({groupId ,userId })
+    if(!existingMemberInGroup) {
+      return false
+    }
+    return existingMemberInGroup
   }
 }

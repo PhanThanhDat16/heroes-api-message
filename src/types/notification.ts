@@ -1,6 +1,10 @@
-export interface INotificationCreate{
-    content: string
-    senderId: string
-    // senderName: string
-    groupId: string
+export interface INotificationCreate {
+  content: string
+  senderId: string
+  groupId: string
+  // senderName: string
+}
+
+export interface INotificationMember {
+  userId: string
 }
