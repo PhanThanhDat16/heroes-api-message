@@ -1,9 +1,12 @@
 import express from 'express'
 import { uploadController } from '~/controller/upload.controller'
+import { errorHandler } from '~/middleware/error.middleware'
 import { upload } from '~/middleware/upload.middleware'
 
-const route = express.Router()
+const router = express.Router()
 
-route.post('/upload', upload.single('content') ,uploadController.uploadImages)
+router.post('/upload', upload.single('content') ,uploadController.uploadImages)
 
-export const routerUpload = route
+router.use(errorHandler)
+
+export const routerUpload = router

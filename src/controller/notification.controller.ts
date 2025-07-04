@@ -1,67 +1,52 @@
 import { Request, Response } from 'express'
 import { notificationService } from '~/service/notification.service'
 import { EHttpStatus } from '~/types/httpStatus'
+import asyncHandler from 'express-async-handler'
 
 export const notificationController = {
-  createNotification: async (req: Request, res: Response) => {
+  createNotification: asyncHandler(async (req: Request, res: Response) => {
     const data = req.body
-    try {
-      const notification = await notificationService.createNotification(data)
-      res.status(EHttpStatus.OK).json({
-        message: 'Create notification success',
-        data: notification
-      })
-    } catch (error) {
-      res.status(EHttpStatus.INTERNAL_SERVER_ERROR).json({
-        message: `Internal server error: ${error}`
-      })
-    }
-  },
+    const notification = await notificationService.createNotification(data)
+    res.status(EHttpStatus.OK).json({
+      message: 'Create notification success',
+      data: notification
+    })
+  }),
 
-  getNotifications: async (req: Request, res: Response) => {
+  getNotifications: asyncHandler(async (req: Request, res: Response) => {
     const userId = req.params.id
-    try {
-      const notification = await notificationService.getNotification(userId)
-      res.status(EHttpStatus.OK).json({
-        message: 'Get notification success',
-        data: notification
-      })
-    } catch (error) {
-      res.status(EHttpStatus.INTERNAL_SERVER_ERROR).json({
-        message: `Internal server error: ${error}`
-      })
-    }
-  },
+    const notification = await notificationService.getNotification(userId)
+    res.status(EHttpStatus.OK).json({
+      message: 'Get notification success',
+      data: notification
+    })
+  }),
 
-  deleteNotification: async (req: Request, res: Response) => {
+  updateReadNotification: asyncHandler(async (req: Request, res: Response) => {
     const userId = req.params.userId
     const notiId = req.params.id
-    try {
-      const notification = await notificationService.deleteNotification(userId, notiId)
-      res.status(EHttpStatus.OK).json({
-        message: 'Delete notification success',
-        data: notification
-      })
-    } catch (error) {
-      res.status(EHttpStatus.INTERNAL_SERVER_ERROR).json({
-        message: `Internal server error: ${error}`
-      })
-    }
-  },
+    const noti = await notificationService.updateReadNotification(userId, notiId)
+    res.status(EHttpStatus.OK).json({
+      message: 'Update read notification success',
+      data: noti
+    })
+  }),
 
-  updateReadNotification: async (req: Request, res: Response) => {
+  deleteNotification: asyncHandler(async (req: Request, res: Response) => {
     const userId = req.params.userId
     const notiId = req.params.id
-    try {
-      const noti = await notificationService.updateReadNotification(userId, notiId)
-      res.status(EHttpStatus.OK).json({
-        message: 'Delete notification success',
-        data: noti
-      })
-    } catch (error) {
-      res.status(EHttpStatus.INTERNAL_SERVER_ERROR).json({
-        message: `Internal server error: ${error}`
-      })
-    }
-  }
+    const notification = await notificationService.deleteNotification(userId, notiId)
+    res.status(EHttpStatus.OK).json({
+      message: 'Delete notification success',
+      data: notification
+    })
+  }),
+
+  deleteAllNotification: asyncHandler(async (req: Request, res: Response) => {
+    const userId = req.params.id
+    await notificationService.deleteAllNotification(userId)
+    res.status(EHttpStatus.OK).json({
+      message: 'Delete all notification success'
+    })
+  })
 }

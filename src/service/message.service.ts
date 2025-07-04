@@ -15,7 +15,7 @@ export const messageService = {
     replyToSenderName,
     replyToType,
     type = 'text',
-    isRead
+    readUsers
   }: IMessageCreate) => {
     let message
     if (!replyToMessageId) {
@@ -30,7 +30,7 @@ export const messageService = {
         replyToSenderName: null,
         replyToType: null,
         type,
-        isRead,
+        readUsers,
         deleteForUser: []
       })
       await message.save()
@@ -46,7 +46,7 @@ export const messageService = {
         replyToSenderName,
         replyToType,
         type,
-        isRead,
+        readUsers,
         deleteForUser: []
       })
       await message.save()
@@ -70,16 +70,32 @@ export const messageService = {
     return message
   },
 
-  getMessageDetail: async (messageId: string) => {
-    const message = await Message.findById(messageId).lean()
+  createSystemMessage: async (groupId: string, content: string) => {
+    const message = new Message({
+      content,
+      groupId,
+      senderId: null,
+      senderName: 'System',
+      type: 'system',
+      quantityReact: 0,
+      isEdited: false,
+      replyToMessageId: null,
+      replyToContent: null,
+      replyToSenderName: null,
+      deleteForUsers: [],
+      readUsers: [],
+      createdAt: new Date(),
+      updatedAt: new Date()
+    })
+    await message.save()
     return message
   },
 
   getMessagesByGroup: async (groupId: string, page = 1, limit = 10, quantityMembers: number, search = '') => {
+    console.log(groupId)
     const skip = (page - 1) * limit
     let senderId
-
-    if (search === undefined || search === null || search.trim() === '') {
+    if (!search || search.trim() === '') {
       senderId = await Message.find({ groupId }).sort({ createdAt: -1 }).skip(skip).limit(limit).lean()
     } else {
       senderId = await Message.find({ groupId, content: { $regex: `^${search}`, $options: 'i' }, type: 'text' })
@@ -92,7 +108,7 @@ export const messageService = {
     // let dataResult: any[] = []
     // for (let m of senderId) {
     //   if (m.replyToMessageId) {
-    //     const result = await messageService.getMessageDetail(m.replyToMessageId)
+    //     const result = await Message.findById(m.replyToMessageId)
     //     if (result === null) {
     //       dataResult = [...dataResult, { ...m, replyToContent: 'Deleted', replyToType: 'delete' }]
     //     } else {
@@ -102,8 +118,6 @@ export const messageService = {
     //     dataResult = [...dataResult, m]
     //   }
     // }
-    // console.log('🚀 message.service.ts:97 - dataResult:', dataResult.length)
-    // console.log('🚀 message.service.ts:98 - dataResult:', dataResult)
     return {
       senderId: senderId.reverse(),
       total: Math.floor(totalMessages / quantityMembers),
@@ -119,19 +133,27 @@ export const messageService = {
   },
 
   updateIsReadMessage: async (userId: string, groupId: string) => {
-    console.log('userId', userId)
-    console.log('groupId', groupId)
     const message = await Message.findOne({ groupId: new mongoose.Types.ObjectId(groupId) }).sort({ createdAt: -1 })
-    if (!message?.isRead.includes(userId)) {
-      message?.isRead.push(userId)
-    }
-    await message?.save()
+    if (!message) return null
+
+    await Message.updateOne({ _id: message._id }, { $addToSet: { readUsers: userId } })
+
+    // return await Message.findById(message._id)
     return message
   },
 
   deleteMessageForEveryone: async (messageId: string) => {
-    // await MessageMember.findByIdAndDelete(messageId)
     const message = await Message.findByIdAndDelete(messageId)
+    await Message.updateMany(
+      { replyToMessageId: messageId },
+      {
+        $set: {
+          replyToContent: 'Deleted',
+          replyToType: 'delete',
+          replyToSenderName: null
+        }
+      }
+    )
     return message
   },
 
