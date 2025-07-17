@@ -21,14 +21,15 @@ app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 setupSocket(server)
 
-server.listen(process.env.PORT)
-
-
-app.use('/api/notifications', routerNotification)
+app.use('/api/notification', routerNotification)
 app.use('/api', routerGroup)
 app.use('/api', routerUpload)
 app.use('/api', routerMessage)
 
-app.listen(process.env.PORT, () => {
-  console.log(`Server is running on port ${process.env.PORT}`)
+server.listen(process.env.PORT, () => {
+  console.log(`Socket server is running on port ${process.env.PORT}`)
 })
+
+// app.listen(process.env.PORT, () => {
+//   console.log(`Server is running on port ${process.env.PORT}`)
+// })

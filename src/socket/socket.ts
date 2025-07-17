@@ -1,8 +1,10 @@
 import { Server } from 'socket.io'
 import http from 'http'
+import { IUser } from '~/types/user'
 
 let io: Server
-const onlineUsers = new Map<string, string>()
+export const onlineUsers = new Map<string, string>()
+
 export const setupSocket = (server: http.Server) => {
   io = new Server(server, {
     cors: {
@@ -29,7 +31,8 @@ export const setupSocket = (server: http.Server) => {
       })
     })
 
-    socket.on('userOnline', (userId: string) => {
+    socket.on('userOnline', (data) => {
+      const { userId } = data
       onlineUsers.set(userId, socket.id)
       io.emit('updateOnlineUsers', Array.from(onlineUsers.keys()))
     })
@@ -38,29 +41,59 @@ export const setupSocket = (server: http.Server) => {
       socket.leave(data.groupId)
     })
 
-    socket.on('sendMessage', (data) => {
-      const {
-        senderId,
-        senderName,
-        content,
-        groupId,
-        type,
-        replyToMessageId,
-        replyToContent,
-        replyToSenderName,
-        replyToType
-      } = data
+    socket.on('kickUserFromGroup', ({ userId, groupId, ownerId }) => {
+      io.to(groupId).emit('kickUserFromGroup', { groupId, userId, ownerId })
+    })
 
+    socket.on('addMemberFromGroup', ({ listUser, group, userId }) => {
+      const groupId = group._id
+      const listMemberOnline: string[] = []
+      listUser.map((user: IUser) => {
+        const socketId = onlineUsers.get(user._id)
+        if (socketId) {
+          listMemberOnline.push(user._id)
+        }
+        if (socketId) {
+          io.to(socketId).emit('addMemberFromGroup', {
+            group,
+            listUser,
+            userId
+          })
+        }
+      })
+      io.to(groupId).emit('addMemberFromGroup', { group, listUser, userId, listMemberOnline })
+    })
+
+    socket.on('sendMessage', (data) => {
+      const { groupId } = data
       io.to(groupId).emit('receiveMessage', {
-        content,
-        senderId,
-        senderName,
-        replyToMessageId,
-        replyToContent,
-        replyToSenderName,
-        replyToType,
-        type,
-        timestamp: new Date()
+        ...data,
+        groupId,
+        createdAt: new Date()
+      })
+    })
+
+    socket.on('deleteMessage', (data) => {
+      const { groupId } = data
+      io.to(groupId).emit('deleteMessage', {
+        groupId,
+        ...data
+      })
+    })
+
+    socket.on('deleteMessageForMe', (data) => {
+      const { groupId } = data
+      io.to(groupId).emit('deleteMessageForMe', {
+        groupId,
+        ...data
+      })
+    })
+
+    socket.on('editMessage', (data) => {
+      const { groupId } = data
+      io.to(groupId).emit('editMessage', {
+        ...data,
+        groupId
       })
     })
 
@@ -84,6 +117,11 @@ export const setupSocket = (server: http.Server) => {
         senderName,
         timestamp: new Date()
       })
+    })
+
+    socket.on('changeTheme', async (data) => {
+      const { groupId } = data
+      io.to(groupId).emit('changeTheme', data)
     })
 
     socket.on('disconnect', () => {

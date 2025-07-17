@@ -2,215 +2,276 @@ import { Request, Response } from 'express'
 import { groupService } from '~/service/group.service'
 import { EHttpStatus } from '~/types/httpStatus'
 import axios from 'axios'
+import asyncHandler from 'express-async-handler'
+import { IRequestWithUser } from '~/middleware/auth.middleware'
+import { GroupMember } from '~/model/grouMember'
 
 export const groupController = {
-  createGroup: async (req: Request, res: Response) => {
+  createGroup: asyncHandler(async (req: Request, res: Response) => {
     const { name, ownerId, members } = req.body
-    try {
-      try {
-        const response = await axios.get(`${process.env.AUTH_SERVICE_URL}/internal/users/${ownerId}`)
-        const user = response.data?.data
-        if (!user) {
-          res.status(EHttpStatus.NOT_FOUND).json({
-            message: `User not found`
-          })
+    const response = await axios.get(`${process.env.AUTH_SERVICE_URL}/internal/users/${ownerId}`)
+    const user = response.data?.data
+    if (!user) {
+      res.status(EHttpStatus.NOT_FOUND).json({
+        message: `User not found`
+      })
+      return
+    }
+    if (members.length > 0) {
+      for (const memberId of members) {
+        const memberUser = await axios.get(`${process.env.AUTH_SERVICE_URL}/internal/users/${ownerId}`)
+        if (!memberUser) {
+          res.status(EHttpStatus.NOT_FOUND).json({ error: `Member user ${memberId} not found` })
           return
         }
-      } catch (error) {
-        res.status(EHttpStatus.NOT_FOUND).json({
-          message: `User not found`
-        })
-        return
       }
-
-      if (members.length > 0) {
-        for (const memberId of members) {
-          const memberUser = await axios.get(`${process.env.AUTH_SERVICE_URL}/internal/users/${ownerId}`)
-          if (!memberUser) {
-            res.status(EHttpStatus.NOT_FOUND).json({ error: `Member user ${memberId} not found` })
-            return
-          }
-        }
-      }
-
-      const group = await groupService.createGroup({ name, ownerId, members })
-      res.status(EHttpStatus.OK).json({
-        message: 'Group created successfully',
-        data: group
-      })
-    } catch (error) {
-      res.status(EHttpStatus.INTERNAL_SERVER_ERROR).json({
-        message: `Internal server error: ${error}`
-      })
     }
-  },
+    const group = await groupService.createGroup({ name, ownerId, members })
+    res.status(EHttpStatus.OK).json({
+      message: 'Group created successfully',
+      data: group
+    })
+  }),
 
-  getGroupByUserId: async (req: Request, res: Response) => {
+  getGroupByUserId: asyncHandler(async (req: Request, res: Response) => {
     const userId = req.params.id
-    try {
-      try {
-        const response = await axios.get(`${process.env.AUTH_SERVICE_URL}/internal/users/${userId}`)
-        const user = response.data?.data
-        if (!user) {
-          res.status(EHttpStatus.NOT_FOUND).json({
-            message: `User not found`
-          })
-          return
-        }
-      } catch (error) {
-        res.status(EHttpStatus.NOT_FOUND).json({
-          message: `User not found`
-        })
-        return
-      }
-
-      const groups = await groupService.getGroupByUserId(userId)
-      res.status(EHttpStatus.OK).json({
-        message: `Get List group successfully`,
-        data: groups
+    const response = await axios.get(`${process.env.AUTH_SERVICE_URL}/internal/users/${userId}`)
+    const user = response.data?.data
+    if (!user) {
+      res.status(EHttpStatus.NOT_FOUND).json({
+        message: `User not found`
       })
-    } catch (error) {
-      res.status(EHttpStatus.INTERNAL_SERVER_ERROR).json({
-        message: `Internal server error: ${error}`
-      })
+      return
     }
-  },
+    const groups = await groupService.getGroupByUserId(userId)
+    res.status(EHttpStatus.OK).json({
+      message: `Get List group successfully`,
+      data: groups
+    })
+  }),
 
-  getGroupDetail: async (req: Request, res: Response) => {
+  getGroupDetail: asyncHandler(async (req: Request, res: Response) => {
     const groupId = req.params.id
-    try {
-      const group = await groupService.getGroupDetail(groupId)
-      if (!group) {
-        res.status(EHttpStatus.NOT_FOUND).json({
-          message: `Group not found`
-        })
-        return
-      }
-
-      let user
-      try {
-        const response = await axios.get(`${process.env.AUTH_SERVICE_URL}/internal/users/${group.ownerId}`)
-        user = response.data?.data
-        if (!user) {
-          res.status(EHttpStatus.NOT_FOUND).json({
-            message: `User not found`
-          })
-          return
-        }
-      } catch (error) {
-        res.status(EHttpStatus.NOT_FOUND).json({
-          message: `User not found`
-        })
-        return
-      }
-
-      res.status(EHttpStatus.OK).json({
-        message: `Get successfully`,
-        data: {
-          ...group,
-          user
-        }
+    const { user: userJWT } = req as IRequestWithUser
+    if (!userJWT) {
+      res.status(EHttpStatus.UNAUTHORIZED).json({
+        message: 'User not authenticated'
       })
-    } catch (error) {
-      res.status(EHttpStatus.INTERNAL_SERVER_ERROR).json({
-        message: `Internal server error: ${error}`
-      })
+      return
     }
-  },
+    const userId = userJWT.id
 
-  getListUserByGroup: async (req: Request, res: Response) => {
+    const group = await groupService.getGroupDetail(groupId, userId)
+    if (!group) {
+      res.status(EHttpStatus.NOT_FOUND).json({
+        message: `Group not found`
+      })
+      return
+    }
+    const response = await axios.get(`${process.env.AUTH_SERVICE_URL}/internal/users/${group.ownerId}`)
+    const user = response.data?.data
+    if (!user) {
+      res.status(EHttpStatus.NOT_FOUND).json({
+        message: `User not found`
+      })
+      return
+    }
+    res.status(EHttpStatus.OK).json({
+      message: `Get successfully`,
+      data: {
+        ...group,
+        user
+      }
+    })
+  }),
+
+  verifyGroupDetail: asyncHandler(async (req, res) => {
+    const groupId = req.params.id
+    const { user: userJWT } = req as IRequestWithUser
+
+    if (!userJWT) {
+      res.status(EHttpStatus.FORBIDDEN).json({ message: 'User not authenticated' })
+      return
+    }
+
+    const inGroup = await GroupMember.findOne({ userId: userJWT.id, groupId }).lean()
+    if (!inGroup) {
+      res.status(EHttpStatus.OK).json({ message: 'OK', data: { access: false } })
+      return
+    }
+    res.status(EHttpStatus.OK).json({ message: 'OK', data: { access: true } })
+  }),
+
+  getListUserByGroup: asyncHandler(async (req: Request, res: Response) => {
     const search = req.query.search as string | undefined
     const groupId = req.params.id
-    try {
-      const group = groupService.getGroupDetail(groupId)
-      if (!group) {
-        res.status(EHttpStatus.NOT_FOUND).json({
-          message: `Group not found`
-        })
-        return
-      }
-      const usersId = await groupService.findManyUserByGroup(groupId, search)
-
-      res.status(EHttpStatus.OK).json({
-        message: `get successfully`,
-        data: usersId.data
+    const { user: userJWT } = req as IRequestWithUser
+    if (!userJWT) {
+      res.status(EHttpStatus.UNAUTHORIZED).json({
+        message: 'User not authenticated'
       })
-    } catch (error) {
-      res.status(EHttpStatus.INTERNAL_SERVER_ERROR).json({
-        message: `Internal server error: ${error}`
-      })
+      return
     }
-  },
+    const userId = userJWT.id
 
-  deleteGroupByUserId: async (req: Request, res: Response) => {
-    try {
-    } catch (error) {
-      res.status(EHttpStatus.INTERNAL_SERVER_ERROR).json({
-        message: `Internal server error: ${error}`
+
+    const group = groupService.getGroupDetail(groupId, userId)
+    if (!group) {
+      res.status(EHttpStatus.NOT_FOUND).json({
+        message: `Group not found`
       })
+      return
     }
-  },
+    const usersId = await groupService.findManyUserByGroup(groupId, search)
 
-  updateGroup: async (req: Request, res: Response) => {
+    res.status(EHttpStatus.OK).json({
+      message: `Get list user by group successfully`,
+      data: usersId.data
+    })
+  }),
+
+  updateRoleGroup: asyncHandler(async (req: Request, res: Response) => {
+    const groupId = req.params.id
+    const userId = req.params.userId
+    const groupMember = await groupService.updateRoleGroup(groupId, userId)
+
+    res.status(EHttpStatus.OK).json({
+      message: 'Update successfully',
+      data: groupMember
+    })
+  }),
+
+  updateGroup: asyncHandler(async (req: Request, res: Response) => {
     const groupId = req.params.id
     const data = req.body
-    try {
-      const group = await groupService.updateGroup(groupId, data)
-      if (!group) {
-        res.status(EHttpStatus.NOT_FOUND).json({
-          message: 'Group not found'
-        })
-        return
-      }
-
-      res.status(EHttpStatus.OK).json({
-        message: 'Update successfully',
-        data: group
+    const group = await groupService.updateGroup(groupId, data)
+    if (!group) {
+      res.status(EHttpStatus.NOT_FOUND).json({
+        message: 'Group not found'
       })
-    } catch (error) {
-      res.status(EHttpStatus.INTERNAL_SERVER_ERROR).json({
-        message: `Internal server error: ${error}`
-      })
+      return
     }
-  },
 
-  updateLeaveGroup: async (req: Request, res: Response) => {
+    res.status(EHttpStatus.OK).json({
+      message: 'Update successfully',
+      data: { ...group }
+    })
+  }),
+
+  addMemberGroup: asyncHandler(async (req: Request, res: Response) => {
     const groupId = req.params.id
-    const userId = req.params.userId
-    const { ownerId } = req.body
-    try {
-      const group = await groupService.updateLeaveGroup(groupId, userId, ownerId)
-      if (!group) {
-        res.status(EHttpStatus.NOT_FOUND).json({
-          message: 'Group not found'
-        })
-        return
+    const data = req.body
+    const { user: userJWT } = req as IRequestWithUser
+    if (!userJWT) {
+      res.status(EHttpStatus.UNAUTHORIZED).json({
+        message: 'User not authenticated'
+      })
+      return
+    }
+    const userId = userJWT.id
+
+    const group = await groupService.getGroupDetail(groupId, userId)
+    if (!group) {
+      res.status(EHttpStatus.NOT_FOUND).json({
+        message: `Group not found`
+      })
+      return
+    }
+    const newMember = await groupService.addMember(groupId, data)
+    res.status(EHttpStatus.OK).json({
+      message: 'Add member successfully',
+      data: {
+        ...newMember
       }
-      res.status(EHttpStatus.OK).json({
-        message: 'Update successfully',
-        data: group
-      })
-    } catch (error) {
-      res.status(EHttpStatus.INTERNAL_SERVER_ERROR).json({
-        message: `Internal server error: ${error}`
-      })
-    }
-  },
+    })
+  }),
 
-  updateRoleGroup: async (req: Request, res: Response) => {
+  updateLeaveGroup: asyncHandler(async (req: Request, res: Response) => {
+    const { id: groupId, userId } = req.params
+    const { ownerId: newOwnerId } = req.body
+
+    const group = await groupService.updateLeaveGroup(groupId, userId, newOwnerId)
+    res.status(EHttpStatus.OK).json({
+      message: 'Update successfully',
+      data: { ...group }
+    })
+  }),
+
+  deleteMemberInGroup: asyncHandler(async (req: Request, res: Response) => {
+    const { id: groupId, memberId: userId } = req.params
+    const { user: userJWT } = req as IRequestWithUser
+    if (!userJWT) {
+      res.status(EHttpStatus.UNAUTHORIZED).json({
+        message: 'User not authenticated'
+      })
+      return
+    }
+    const userIdToken = userJWT.id
+
+    const group = await groupService.getGroupDetail(groupId, userIdToken)
+    if (!group) {
+      res.status(EHttpStatus.NOT_FOUND).json({
+        message: `Group not found`
+      })
+      return
+    }
+    const result = await groupService.deleteMemberInGroup(groupId, userId)
+    res.status(EHttpStatus.OK).json({
+      message: 'Delete successfully',
+      data: { ...result }
+    })
+  }),
+
+  addTagForGroup: asyncHandler(async (req: Request, res: Response) => {
+    const { id: groupId, userId } = req.params
+    const { tag } = req.body
+    const groupMember = await groupService.addTagForGroup(groupId, userId, tag)
+    res.status(EHttpStatus.OK).json({
+      message: 'Delete successfully',
+      data: groupMember
+    })
+  }),
+
+  getManyGroupByUser: asyncHandler(async (req: Request, res: Response) => {
+    const { user } = req as IRequestWithUser
+    if (!user) {
+      res.status(EHttpStatus.UNAUTHORIZED).json({
+        message: 'User not authenticated'
+      })
+      return
+    }
+    const userId = user.id
+    const search = req.query.search?.toString() || ''
+    const listGroup = await groupService.findManyGroup(userId, search)
+    res.status(EHttpStatus.OK).json({
+      message: 'find list group successfully',
+      data: listGroup
+    })
+  }),
+
+  updateThemeGroup: asyncHandler(async (req: Request, res: Response) => {
     const groupId = req.params.id
-    const userId = req.params.userId
-    try {
-      const groupMember = await groupService.updateRoleGroup(groupId, userId)
-
-      res.status(EHttpStatus.OK).json({
-        message: 'Update successfully',
-        data: groupMember
+    const data = req.body
+    const group = await groupService.updateThemeGroup(groupId, data)
+    if (!group) {
+      res.status(EHttpStatus.NOT_FOUND).json({
+        message: 'Group not found'
       })
-    } catch (error) {
-      res.status(EHttpStatus.INTERNAL_SERVER_ERROR).json({
-        message: `Internal server error: ${error}`
-      })
+      return
     }
-  }
+
+    res.status(EHttpStatus.OK).json({
+      message: 'Update Theme successfully',
+      data: { ...group }
+    })
+  }),
+
+  deleteGroup: asyncHandler(async (req: Request, res: Response) => {
+    const groupId = req.params.id
+    const groupDeleted = await groupService.deleteGroup(groupId)
+    res.status(EHttpStatus.OK).json({
+      message: 'Delete group successfully',
+      data: groupDeleted
+    })
+  })
 }

@@ -8,4 +8,5 @@ export interface IMessageCreate {
   replyToSenderName: string | null
   replyToType: string | null
   type: string
+  readUsers: string
 }

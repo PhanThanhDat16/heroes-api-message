@@ -14,5 +14,5 @@ export interface IGroupMember {
   userId: string
   groupId: string
   role: 'admin' | 'member'
-  tags: string[]
+  tags: string
 }
