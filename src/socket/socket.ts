@@ -3,7 +3,7 @@ import http from 'http'
 import { IUser } from '~/types/user'
 
 let io: Server
-const onlineUsers = new Map<string, string>()
+export const onlineUsers = new Map<string, string>()
 
 export const setupSocket = (server: http.Server) => {
   io = new Server(server, {
@@ -47,8 +47,12 @@ export const setupSocket = (server: http.Server) => {
 
     socket.on('addMemberFromGroup', ({ listUser, group, userId }) => {
       const groupId = group._id
+      const listMemberOnline: string[] = []
       listUser.map((user: IUser) => {
         const socketId = onlineUsers.get(user._id)
+        if (socketId) {
+          listMemberOnline.push(user._id)
+        }
         if (socketId) {
           io.to(socketId).emit('addMemberFromGroup', {
             group,
@@ -57,7 +61,7 @@ export const setupSocket = (server: http.Server) => {
           })
         }
       })
-      io.to(groupId).emit('addMemberFromGroup', { group, listUser, userId })
+      io.to(groupId).emit('addMemberFromGroup', { group, listUser, userId, listMemberOnline })
     })
 
     socket.on('sendMessage', (data) => {
@@ -115,9 +119,13 @@ export const setupSocket = (server: http.Server) => {
       })
     })
 
+    socket.on('changeTheme', async (data) => {
+      const { groupId } = data
+      io.to(groupId).emit('changeTheme', data)
+    })
+
     socket.on('disconnect', () => {
       for (const [userId, socketId] of onlineUsers.entries()) {
-        console.log(socket.id)
         if (socketId === socket.id) {
           onlineUsers.delete(userId)
           break

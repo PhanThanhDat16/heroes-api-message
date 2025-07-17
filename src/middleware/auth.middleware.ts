@@ -1,9 +1,7 @@
 import jwt, { JwtPayload } from 'jsonwebtoken'
 import { NextFunction, Request, Response } from 'express'
 import { EHttpStatus } from '~/types/httpStatus'
-
-
-interface IRequestWithUser extends Request {
+export interface IRequestWithUser extends Request {
   user?: JwtPayload
 }
 

@@ -2,6 +2,7 @@ import { Request, Response } from 'express'
 import { notificationService } from '~/service/notification.service'
 import { EHttpStatus } from '~/types/httpStatus'
 import asyncHandler from 'express-async-handler'
+import { IRequestWithUser } from '~/middleware/auth.middleware'
 
 export const notificationController = {
   createNotification: asyncHandler(async (req: Request, res: Response) => {
@@ -32,21 +33,36 @@ export const notificationController = {
     })
   }),
 
-  deleteNotification: asyncHandler(async (req: Request, res: Response) => {
-    const userId = req.params.userId
-    const notiId = req.params.id
-    const notification = await notificationService.deleteNotification(userId, notiId)
-    res.status(EHttpStatus.OK).json({
-      message: 'Delete notification success',
-      data: notification
-    })
-  }),
-
   deleteAllNotification: asyncHandler(async (req: Request, res: Response) => {
     const userId = req.params.id
     await notificationService.deleteAllNotification(userId)
     res.status(EHttpStatus.OK).json({
       message: 'Delete all notification success'
+    })
+  }),
+
+  readAllNotifications: asyncHandler(async (req: Request, res: Response) => {
+    const userId = req.params.userId
+    const result = await notificationService.readAllNotifications(userId)
+    res.status(EHttpStatus.OK).json({
+      message: 'Marked all notifications as read',
+      data: result
+    })
+  }),
+
+  readNotifications: asyncHandler(async (req: Request, res: Response) => {
+    const notiId = req.params.id
+    const { user: userJWT } = req as IRequestWithUser
+    if (!userJWT) {
+      res.status(EHttpStatus.UNAUTHORIZED).json({
+        message: 'User not authenticated'
+      })
+      return
+    }
+    const result = await notificationService.readNotifications(notiId, userJWT.id)
+    res.status(EHttpStatus.OK).json({
+      message: 'Marked all notifications as read',
+      data: result
     })
   })
 }

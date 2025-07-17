@@ -3,6 +3,8 @@ import { groupService } from '~/service/group.service'
 import { EHttpStatus } from '~/types/httpStatus'
 import axios from 'axios'
 import asyncHandler from 'express-async-handler'
+import { IRequestWithUser } from '~/middleware/auth.middleware'
+import { GroupMember } from '~/model/grouMember'
 
 export const groupController = {
   createGroup: asyncHandler(async (req: Request, res: Response) => {
@@ -50,7 +52,16 @@ export const groupController = {
 
   getGroupDetail: asyncHandler(async (req: Request, res: Response) => {
     const groupId = req.params.id
-    const group = await groupService.getGroupDetail(groupId)
+    const { user: userJWT } = req as IRequestWithUser
+    if (!userJWT) {
+      res.status(EHttpStatus.UNAUTHORIZED).json({
+        message: 'User not authenticated'
+      })
+      return
+    }
+    const userId = userJWT.id
+
+    const group = await groupService.getGroupDetail(groupId, userId)
     if (!group) {
       res.status(EHttpStatus.NOT_FOUND).json({
         message: `Group not found`
@@ -74,10 +85,37 @@ export const groupController = {
     })
   }),
 
+  verifyGroupDetail: asyncHandler(async (req, res) => {
+    const groupId = req.params.id
+    const { user: userJWT } = req as IRequestWithUser
+
+    if (!userJWT) {
+      res.status(EHttpStatus.FORBIDDEN).json({ message: 'User not authenticated' })
+      return
+    }
+
+    const inGroup = await GroupMember.findOne({ userId: userJWT.id, groupId }).lean()
+    if (!inGroup) {
+      res.status(EHttpStatus.OK).json({ message: 'OK', data: { access: false } })
+      return
+    }
+    res.status(EHttpStatus.OK).json({ message: 'OK', data: { access: true } })
+  }),
+
   getListUserByGroup: asyncHandler(async (req: Request, res: Response) => {
     const search = req.query.search as string | undefined
     const groupId = req.params.id
-    const group = groupService.getGroupDetail(groupId)
+    const { user: userJWT } = req as IRequestWithUser
+    if (!userJWT) {
+      res.status(EHttpStatus.UNAUTHORIZED).json({
+        message: 'User not authenticated'
+      })
+      return
+    }
+    const userId = userJWT.id
+
+
+    const group = groupService.getGroupDetail(groupId, userId)
     if (!group) {
       res.status(EHttpStatus.NOT_FOUND).json({
         message: `Group not found`
@@ -91,8 +129,6 @@ export const groupController = {
       data: usersId.data
     })
   }),
-
-  deleteGroupByUserId: asyncHandler(async (req: Request, res: Response) => {}),
 
   updateRoleGroup: asyncHandler(async (req: Request, res: Response) => {
     const groupId = req.params.id
@@ -125,7 +161,16 @@ export const groupController = {
   addMemberGroup: asyncHandler(async (req: Request, res: Response) => {
     const groupId = req.params.id
     const data = req.body
-    const group = await groupService.getGroupDetail(groupId)
+    const { user: userJWT } = req as IRequestWithUser
+    if (!userJWT) {
+      res.status(EHttpStatus.UNAUTHORIZED).json({
+        message: 'User not authenticated'
+      })
+      return
+    }
+    const userId = userJWT.id
+
+    const group = await groupService.getGroupDetail(groupId, userId)
     if (!group) {
       res.status(EHttpStatus.NOT_FOUND).json({
         message: `Group not found`
@@ -142,10 +187,9 @@ export const groupController = {
   }),
 
   updateLeaveGroup: asyncHandler(async (req: Request, res: Response) => {
-    // const groupId = req.params.id
-    // const userId = req.params.userId
-    const { groupId, userId } = req.params
-    const { newOwnerId } = req.body
+    const { id: groupId, userId } = req.params
+    const { ownerId: newOwnerId } = req.body
+
     const group = await groupService.updateLeaveGroup(groupId, userId, newOwnerId)
     res.status(EHttpStatus.OK).json({
       message: 'Update successfully',
@@ -154,9 +198,17 @@ export const groupController = {
   }),
 
   deleteMemberInGroup: asyncHandler(async (req: Request, res: Response) => {
-    const groupId = req.params.id
-    const userId = req.params.memberId
-    const group = await groupService.getGroupDetail(groupId)
+    const { id: groupId, memberId: userId } = req.params
+    const { user: userJWT } = req as IRequestWithUser
+    if (!userJWT) {
+      res.status(EHttpStatus.UNAUTHORIZED).json({
+        message: 'User not authenticated'
+      })
+      return
+    }
+    const userIdToken = userJWT.id
+
+    const group = await groupService.getGroupDetail(groupId, userIdToken)
     if (!group) {
       res.status(EHttpStatus.NOT_FOUND).json({
         message: `Group not found`
@@ -167,6 +219,59 @@ export const groupController = {
     res.status(EHttpStatus.OK).json({
       message: 'Delete successfully',
       data: { ...result }
+    })
+  }),
+
+  addTagForGroup: asyncHandler(async (req: Request, res: Response) => {
+    const { id: groupId, userId } = req.params
+    const { tag } = req.body
+    const groupMember = await groupService.addTagForGroup(groupId, userId, tag)
+    res.status(EHttpStatus.OK).json({
+      message: 'Delete successfully',
+      data: groupMember
+    })
+  }),
+
+  getManyGroupByUser: asyncHandler(async (req: Request, res: Response) => {
+    const { user } = req as IRequestWithUser
+    if (!user) {
+      res.status(EHttpStatus.UNAUTHORIZED).json({
+        message: 'User not authenticated'
+      })
+      return
+    }
+    const userId = user.id
+    const search = req.query.search?.toString() || ''
+    const listGroup = await groupService.findManyGroup(userId, search)
+    res.status(EHttpStatus.OK).json({
+      message: 'find list group successfully',
+      data: listGroup
+    })
+  }),
+
+  updateThemeGroup: asyncHandler(async (req: Request, res: Response) => {
+    const groupId = req.params.id
+    const data = req.body
+    const group = await groupService.updateThemeGroup(groupId, data)
+    if (!group) {
+      res.status(EHttpStatus.NOT_FOUND).json({
+        message: 'Group not found'
+      })
+      return
+    }
+
+    res.status(EHttpStatus.OK).json({
+      message: 'Update Theme successfully',
+      data: { ...group }
+    })
+  }),
+
+  deleteGroup: asyncHandler(async (req: Request, res: Response) => {
+    const groupId = req.params.id
+    const groupDeleted = await groupService.deleteGroup(groupId)
+    res.status(EHttpStatus.OK).json({
+      message: 'Delete group successfully',
+      data: groupDeleted
     })
   })
 }

@@ -1,8 +1,10 @@
-import { MessageMember } from '~/model/messageMember'
 import { IMessageCreate } from '~/types/messages'
-import { GroupMember } from '~/model/grouMember'
 import { Message } from '~/model/message'
 import mongoose from 'mongoose'
+import { MessageReact } from '~/model/messageReact'
+import { getIO } from '~/socket/socket'
+import { GroupMember } from '~/model/grouMember'
+import { Types } from 'mongoose'
 
 export const messageService = {
   createMessageByGroup: async ({
@@ -52,21 +54,6 @@ export const messageService = {
       await message.save()
     }
 
-    // const users = await GroupMember.find({ groupId: groupId }).select('userId -_id').lean()
-    // const listUserId = users.map((u) => u.userId)
-
-    // for (let u of listUserId) {
-    //   const data = {
-    //     groupId: groupId,
-    //     userId: u,
-    //     isRead: false,
-    //     messageId: message._id,
-    //     isDeleteForMe: false
-    //   }
-    //   const messageMember = new MessageMember(data)
-    //   await messageMember.save()
-    // }
-
     return message
   },
 
@@ -91,39 +78,109 @@ export const messageService = {
     return message
   },
 
-  getMessagesByGroup: async (groupId: string, page = 1, limit = 10, quantityMembers: number, search = '') => {
-    console.log(groupId)
+  getMessagesByGroup: async (
+    groupId: string,
+    page = 1,
+    limit = 10,
+    search = '',
+    userId: string
+  ) => {
     const skip = (page - 1) * limit
-    let senderId
-    if (!search || search.trim() === '') {
-      senderId = await Message.find({ groupId }).sort({ createdAt: -1 }).skip(skip).limit(limit).lean()
-    } else {
-      senderId = await Message.find({ groupId, content: { $regex: `^${search}`, $options: 'i' }, type: 'text' })
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean()
+    const baseFilter: any = {
+      groupId,
+      deleteForUser: { $nin: [userId] }
     }
-    const totalMessages = await Message.countDocuments({ groupId })
-    // let dataResult: any[] = []
-    // for (let m of senderId) {
-    //   if (m.replyToMessageId) {
-    //     const result = await Message.findById(m.replyToMessageId)
-    //     if (result === null) {
-    //       dataResult = [...dataResult, { ...m, replyToContent: 'Deleted', replyToType: 'delete' }]
-    //     } else {
-    //       dataResult = [...dataResult, m]
-    //     }
-    //   } else {
-    //     dataResult = [...dataResult, m]
-    //   }
+
+    function escapeRegex(str: string) {
+      return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    }
+    const escapedSearch = escapeRegex(search.trim())
+    const listFilter: any = !search.trim()
+      ? baseFilter
+      : {
+          ...baseFilter,
+          type: { $ne: 'system' },
+          content: { $regex: `^${escapedSearch}`, $options: 'i' }
+        }
+
+    const msgs = await Message.find(listFilter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean()
+
+    if (!msgs.length) {
+      return {
+        senderId: [],
+        total: 0,
+        page,
+        limit,
+        totalPages: 0,
+        mediaImageCount: 0,
+        mediaFileCount: 0
+      }
+    }
+
+    const messageIds = msgs.map((m) => m._id)
+    const reactionsRaw = await MessageReact.aggregate([
+      { $match: { messageId: { $in: messageIds } } },
+      {
+        $group: {
+          _id: { messageId: '$messageId', type: '$type' },
+          count: { $sum: 1 },
+          users: { $push: '$userId' }
+        }
+      }
+    ])
+
+    const reactionsMap: Record<string, Record<string, { count: number; users: string[] }>> = {}
+    reactionsRaw.forEach((r) => {
+      const { messageId, type } = r._id
+      const key = messageId.toString()
+      reactionsMap[key] ??= {}
+      reactionsMap[key][type] = { count: r.count, users: r.users }
+    })
+
+    const senderId = msgs
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .map((m) => ({
+        ...m,
+        reactions: reactionsMap[m._id.toString()] || {}
+      }))
+
+    // const userOnlyFilter = { ...baseFilter, type: { $ne: 'system' } }
+    // const [imageCount, fileCount, totalVisible] = await Promise.all([
+    //   Message.countDocuments({ ...baseFilter, type: 'image' }),
+    //   Message.countDocuments({
+    //     ...baseFilter,
+    //     type: { $in: ['excel', 'word'] }
+    //   }),
+    //   Message.countDocuments(userOnlyFilter)
+    // ])
+
+    // return {
+    //   senderId,
+    //   total: Math.floor(totalVisible / quantityMembers),
+    //   page,
+    //   limit,
+    //   totalPages: Math.ceil(totalVisible / limit),
+    //   mediaImageCount: imageCount,
+    //   mediaFileCount: fileCount
     // }
+
+    const userOnlyFilter = { ...baseFilter, type: { $ne: 'system' } }
+    const [imageCount, fileCount, totalVisible] = await Promise.all([
+      Message.countDocuments({ ...baseFilter, type: 'image' }),
+      Message.countDocuments({
+        ...baseFilter,
+        type: { $in: ['excel', 'word'] }
+      }),
+      Message.countDocuments(userOnlyFilter)
+    ])
+
     return {
-      senderId: senderId.reverse(),
-      total: Math.floor(totalMessages / quantityMembers),
+      senderId,
       page,
       limit,
-      totalPages: Math.ceil(Math.floor(totalMessages / quantityMembers) / limit)
+      totalPages: Math.ceil(totalVisible / limit),
+      mediaImageCount: imageCount,
+      mediaFileCount: fileCount
     }
   },
 
@@ -133,12 +190,13 @@ export const messageService = {
   },
 
   updateIsReadMessage: async (userId: string, groupId: string) => {
-    const message = await Message.findOne({ groupId: new mongoose.Types.ObjectId(groupId) }).sort({ createdAt: -1 })
+    const message = await Message.findOne({ groupId: new mongoose.Types.ObjectId(groupId) })
+      .sort({ createdAt: -1 })
+      .lean()
+    const messages = await Message.find({ groupId: new mongoose.Types.ObjectId(groupId) }).lean()
     if (!message) return null
-
-    await Message.updateOne({ _id: message._id }, { $addToSet: { readUsers: userId } })
-
-    // return await Message.findById(message._id)
+    const resultMessage = messages.filter((m) => m.readUsers.length <= 1)
+    await resultMessage.map(async (m) => await Message.updateMany({ _id: m._id }, { $addToSet: { readUsers: userId } }))
     return message
   },
 
@@ -164,5 +222,89 @@ export const messageService = {
     }
     await message?.save()
     return message
+  },
+
+  reactToMessage: async (userId: string, messageId: string, type: string, groupId: string) => {
+    const existingReact = await MessageReact.findOne({ userId, messageId, type }).lean()
+    if (!existingReact) {
+      await MessageReact.create({ userId, messageId, type })
+      await Message.findByIdAndUpdate(messageId, { $inc: { quantityReact: 1 } })
+    } else {
+      await MessageReact.deleteOne({ _id: existingReact._id })
+      await Message.findByIdAndUpdate(messageId, { $inc: { quantityReact: -1 } })
+    }
+
+    const reactionsRaw = await MessageReact.aggregate([
+      { $match: { messageId: new mongoose.Types.ObjectId(messageId) } },
+      {
+        $group: {
+          _id: '$type',
+          count: { $sum: 1 },
+          users: { $push: '$userId' }
+        }
+      }
+    ])
+
+    const reactions: Record<string, { count: number; users: string[] }> = {}
+    for (const item of reactionsRaw) {
+      reactions[item._id] = {
+        count: item.count,
+        users: item.users
+      }
+    }
+
+    const message = await Message.findById(messageId).lean()
+
+    const io = getIO()
+    io.to(groupId).emit('reactMessage', {
+      reactions,
+      messageId,
+      userId,
+      quantityReact: message?.quantityReact
+    })
+
+    return {
+      reactions,
+      messageId,
+      quantityReact: message?.quantityReact ?? 0
+    }
+  },
+
+  findManyMessageByUser: async (userId: string, search?: string) => {
+    const groupMemberDocs = await GroupMember.find({ userId }).select('groupId').lean()
+    const groupIds = groupMemberDocs.map((doc) => new Types.ObjectId(doc.groupId))
+
+    const nonSystemQuery: any = {
+      groupId: { $in: groupIds },
+      type: { $ne: 'system' }
+    }
+
+    function escapeRegex(str: string) {
+      return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    }
+
+    if (search && search.trim() !== '') {
+      const escapedSearch = escapeRegex(search.trim())
+      nonSystemQuery.content = { $regex: `^${escapedSearch}`, $options: 'i' }
+    }
+
+    const nonSystemMessages = await Message.find(nonSystemQuery)
+      .populate({ path: 'groupId', select: '_id name' })
+      .sort({ createdAt: -1 })
+      .lean()
+
+    return {
+      senderId: nonSystemMessages
+    }
+  },
+
+  deleteAllMessageInGroup: async (groupId: string) => {
+    const docs = await Message.find({ groupId }).select('_id').lean()
+    const messageIds = docs.map((d) => d._id)
+    if (messageIds.length) {
+      await MessageReact.deleteMany({ messageId: { $in: messageIds } })
+    }
+    await Message.deleteMany({ groupId })
+    return true
   }
 }

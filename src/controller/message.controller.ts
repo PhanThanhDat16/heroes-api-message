@@ -4,6 +4,7 @@ import { groupService } from '~/service/group.service'
 import { messageService } from '~/service/message.service'
 import { EHttpStatus } from '~/types/httpStatus'
 import asyncHandler from 'express-async-handler'
+import { IRequestWithUser } from '~/middleware/auth.middleware'
 
 export const messageController = {
   createMessageByGroup: asyncHandler(async (req: Request, res: Response) => {
@@ -35,14 +36,22 @@ export const messageController = {
     const page = parseInt(req.query.page as string) || 1
     const limit = parseInt(req.query.limit as string) || 10
     const search = req.query.search?.toString() || ''
+    const { user } = req as IRequestWithUser
+    if (!user) {
+      res.status(EHttpStatus.UNAUTHORIZED).json({
+        message: 'User not authenticated'
+      })
+      return
+    }
+    const userId = user.id
     const group = await groupService.findGroupById(groupId)
     if (!group) {
       res.status(EHttpStatus.NOT_FOUND).json({ message: 'Group not found' })
       return
     }
     const members = await groupService.findManyUserByGroup(groupId)
-    // console.l
-    const messages = await messageService.getMessagesByGroup(groupId, page, limit, members.data.length, search)
+    const messages = await messageService.getMessagesByGroup(groupId, page, limit, search, userId)
+
     res.status(EHttpStatus.OK).json({
       message: 'Get group detail successfully',
       data: {
@@ -52,10 +61,6 @@ export const messageController = {
       }
     })
   }),
-
-  // getGeneral: async (req: Request, res: Response) => {
-
-  // },
 
   updateMessage: asyncHandler(async (req: Request, res: Response) => {
     const messageId = req.params.id
@@ -95,6 +100,38 @@ export const messageController = {
     res.status(EHttpStatus.OK).json({
       message: 'Update is read message successfull',
       data: group
+    })
+  }),
+
+  reactToMessage: asyncHandler(async (req: Request, res: Response) => {
+    const messageId = req.params.messageId
+    const groupId = req.params.id
+    const { userId, type } = req.body
+    if (!userId || !messageId || !type) {
+      res.status(EHttpStatus.BAD_REQUEST).json({ message: 'Missing fields' })
+      return
+    }
+    const result = await messageService.reactToMessage(userId, messageId, type, groupId)
+    res.status(EHttpStatus.OK).json({
+      message: `React successfully`,
+      data: result
+    })
+  }),
+
+  getMessageGeneral: asyncHandler(async (req: Request, res: Response) => {
+    const { user } = req as IRequestWithUser
+    if (!user) {
+      res.status(EHttpStatus.UNAUTHORIZED).json({
+        message: 'User not authenticated'
+      })
+      return
+    }
+    const userId = user.id
+    const search = req.query.search?.toString() || ''
+    const findMessage = await messageService.findManyMessageByUser(userId, search)
+    res.status(EHttpStatus.OK).json({
+      message: 'find many message successfull',
+      data: findMessage
     })
   })
 }

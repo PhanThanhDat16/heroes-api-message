@@ -5,7 +5,7 @@ import { upload } from '~/middleware/upload.middleware'
 
 const router = express.Router()
 
-router.post('/upload', upload.single('content') ,uploadController.uploadImages)
+router.post('/upload', upload.single('content'), uploadController.uploadImages)
 
 router.use(errorHandler)
 

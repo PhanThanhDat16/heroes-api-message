@@ -5,7 +5,11 @@ const groupMember = new Schema(
     userId: { type: String, required: true },
     groupId: { type: mongoose.Schema.ObjectId, required: true, ref: 'Group' },
     role: { type: String, enum: ['admin', 'member'], default: 'member' },
-    tags: { type: [String], default: [] }
+    tag: {
+      type: String,
+      enum: ['Family', 'Friendly', 'Company', 'Travel', 'Customer', 'Class'],
+      default: null
+    }
   },
   {
     versionKey: false,
@@ -19,8 +23,8 @@ groupMember.index({ userId: 1, groupId: 1 })
 export const GroupMember = mongoose.model('GroupMember', groupMember)
 
 export interface IGroupMemberModel extends Document {
-    userId: string
-    groupId: string
-    role: 'admin' | 'member',
-    tags: string[]
+  userId: string
+  groupId: string
+  role: 'admin' | 'member'
+  tag: string | null
 }

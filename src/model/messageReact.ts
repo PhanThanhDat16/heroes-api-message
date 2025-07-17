@@ -4,7 +4,7 @@ const messageReactSchema = new Schema(
   {
     userId: { type: String, required: true },
     messageId: { type: mongoose.Schema.ObjectId, required: true, ref: 'Message' },
-    reactId: { type: mongoose.Schema.ObjectId, required: true, ref: 'React' },
+    type: { type: String, enum: ['heart', 'kiss-heart', 'laugh', 'cry', 'smile'], default: null }
   },
   {
     versionKey: false,
@@ -13,11 +13,11 @@ const messageReactSchema = new Schema(
   }
 )
 
-messageReactSchema.index({ userId: 1, messageId: 1, reactId: 1 })
+messageReactSchema.index({ userId: 1, messageId: 1 })
 
 export const MessageReact = mongoose.model('MessageReact', messageReactSchema)
 export interface IMessageReactModel extends Document {
   userId: string
   messageId: string
-  reactId: string
+  type: string | null
 }

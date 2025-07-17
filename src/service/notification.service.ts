@@ -1,3 +1,4 @@
+/* eslint-disable prefer-const */
 import { GroupMember } from '~/model/grouMember'
 import { Notification } from '~/model/notification'
 
@@ -9,6 +10,7 @@ export const notificationService = {
       const noti = new Notification({
         content: data.content,
         userId: id,
+        groupId: data.groupId,
         readUsers: false
       })
       await noti.save()
@@ -17,7 +19,7 @@ export const notificationService = {
   },
 
   getNotification: async (userId: string) => {
-    const notification = await Notification.find({ userId }).sort({ createdAt: -1 }).populate('notification').lean()
+    const notification = await Notification.find({ userId }).sort({ createdAt: -1 }).lean()
     return notification
   },
 
@@ -26,13 +28,22 @@ export const notificationService = {
     return noti
   },
 
-  deleteNotification: async (userId: string, notiId: string) => {
-    const noti = await Notification.findOneAndDelete({ _id: notiId, userId })
-    return noti
-  },
-
   deleteAllNotification: async (userId: string) => {
     await Notification.deleteMany({ userId })
     return true
+  },
+
+  readAllNotifications: async (userId: string) => {
+    const result = await Notification.updateMany({ userId, isRead: false }, { $set: { isRead: true } })
+    return result
+  },
+
+  readNotifications: async (notiId: string, userId: string) => {
+    const result = await Notification.findOneAndUpdate(
+      { _id: notiId, userId, isRead: false },
+      { isRead: true },
+      { new: true }
+    )
+    return result
   }
 }
