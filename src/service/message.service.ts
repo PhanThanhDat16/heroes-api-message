@@ -5,6 +5,7 @@ import { MessageReact } from '~/model/messageReact'
 import { getIO } from '~/socket/socket'
 import { GroupMember } from '~/model/grouMember'
 import { Types } from 'mongoose'
+import { ENameEvent } from '~/types/nameEventSocket'
 
 export const messageService = {
   createMessageByGroup: async ({
@@ -54,6 +55,12 @@ export const messageService = {
       await message.save()
     }
 
+    const io = getIO()
+    io.to(groupId).emit(ENameEvent.RECEIVE_MESSAGE, {
+      ...message?.toObject(),
+      groupId,
+      createdAt: new Date()
+    })
     return message
   },
 
@@ -78,13 +85,7 @@ export const messageService = {
     return message
   },
 
-  getMessagesByGroup: async (
-    groupId: string,
-    page = 1,
-    limit = 10,
-    search = '',
-    userId: string
-  ) => {
+  getMessagesByGroup: async (groupId: string, page = 1, limit = 10, search = '', userId: string) => {
     const skip = (page - 1) * limit
     const baseFilter: any = {
       groupId,
@@ -144,26 +145,6 @@ export const messageService = {
         reactions: reactionsMap[m._id.toString()] || {}
       }))
 
-    // const userOnlyFilter = { ...baseFilter, type: { $ne: 'system' } }
-    // const [imageCount, fileCount, totalVisible] = await Promise.all([
-    //   Message.countDocuments({ ...baseFilter, type: 'image' }),
-    //   Message.countDocuments({
-    //     ...baseFilter,
-    //     type: { $in: ['excel', 'word'] }
-    //   }),
-    //   Message.countDocuments(userOnlyFilter)
-    // ])
-
-    // return {
-    //   senderId,
-    //   total: Math.floor(totalVisible / quantityMembers),
-    //   page,
-    //   limit,
-    //   totalPages: Math.ceil(totalVisible / limit),
-    //   mediaImageCount: imageCount,
-    //   mediaFileCount: fileCount
-    // }
-
     const userOnlyFilter = { ...baseFilter, type: { $ne: 'system' } }
     const [imageCount, fileCount, totalVisible] = await Promise.all([
       Message.countDocuments({ ...baseFilter, type: 'image' }),
@@ -186,6 +167,16 @@ export const messageService = {
 
   updateMessageByGroup: async (messageId: string, data: { content: string }) => {
     const message = await Message.findByIdAndUpdate(messageId, { ...data, isEdited: true }, { new: true })
+
+    // socket
+    const io = getIO()
+    const groupId = message?.groupId?.toString()
+    if (groupId) {
+      io.to(groupId).emit(ENameEvent.EDIT_MESSAGE, {
+        ...message?.toObject(),
+        groupId
+      })
+    }
     return message
   },
 
@@ -212,6 +203,16 @@ export const messageService = {
         }
       }
     )
+
+    // socket
+    const io = getIO()
+    const groupId = message?.groupId?.toString()
+    if (groupId) {
+      io.to(groupId).emit(ENameEvent.DELETE_MESSAGE, {
+        groupId,
+        ...message?.toObject()
+      })
+    }
     return message
   },
 
@@ -221,6 +222,16 @@ export const messageService = {
       message?.deleteForUser.push(userId)
     }
     await message?.save()
+
+    // socket
+    const io = getIO()
+    const groupId = message?.groupId?.toString()
+    if (groupId) {
+      io.to(groupId).emit(ENameEvent.DELETE_MESSAGE_ME, {
+        groupId,
+        ...message?.toObject()
+      })
+    }
     return message
   },
 
@@ -256,7 +267,7 @@ export const messageService = {
     const message = await Message.findById(messageId).lean()
 
     const io = getIO()
-    io.to(groupId).emit('reactMessage', {
+    io.to(groupId).emit(ENameEvent.REACT_MESSAGE, {
       reactions,
       messageId,
       userId,

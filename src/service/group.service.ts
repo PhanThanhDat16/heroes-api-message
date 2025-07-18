@@ -7,6 +7,9 @@ import { messageService } from './message.service'
 import { notificationService } from './notification.service'
 import { getIO, onlineUsers } from '~/socket/socket'
 import { Notification } from '~/model/notification'
+import { listTheme } from '~/constants/theme.constants'
+import { IUser } from '~/types/user'
+import { ENameEvent } from '~/types/nameEventSocket'
 
 export const groupService = {
   createGroup: async ({ name, ownerId, members }: IGroupCreate) => {
@@ -40,7 +43,7 @@ export const groupService = {
     const io = getIO()
     const socketIds = Array.from(onlineUsers.values())
     socketIds.forEach((socketId) => {
-      io.to(socketId).emit('newNotification', {
+      io.to(socketId).emit(ENameEvent.NEW_NOTIFICATION, {
         content: `You have a new group with name ${name}`,
         groupId: group._id.toString()
       })
@@ -134,33 +137,52 @@ export const groupService = {
     return groupMember
   },
 
-  updateGroup: async (groupId: string, data: { name: string }) => {
+  updateGroup: async (groupId: string, newName: string, senderId: string, senderName: string) => {
     const oldGroup = await Group.findById(groupId)
-    const result = await Group.findByIdAndUpdate(groupId, data, { new: true }).lean()
+    const result = await Group.findByIdAndUpdate(groupId, { name: newName }, { new: true }).lean()
     if (!result) return false
     let message
-    if (oldGroup && oldGroup.name !== data.name) {
-      message = await messageService.createSystemMessage(groupId, `Group name changed to '${data.name}'`)
+    if (oldGroup && oldGroup.name !== newName) {
+      const io = getIO()
+      message = await messageService.createSystemMessage(groupId, `Group name changed to '${newName}'`)
       await notificationService.createNotification({
-        content: `Group ${oldGroup.name} changed ${data.name}`,
+        content: `Group ${oldGroup.name} changed ${newName}`,
         groupId: oldGroup._id.toString()
       })
-      const io = getIO()
+
+      // socket
+      const dataSocket = {
+        senderId,
+        senderName,
+        groupId: result._id,
+        name: result.name
+      }
+      io.to(groupId).emit(ENameEvent.EDIT_GROUP, {
+        ...dataSocket,
+        timestamp: new Date()
+      })
+      io.to(groupId).emit(ENameEvent.RECEIVE_MESSAGE, {
+        ...message.toObject(),
+        groupId,
+        createdAt: new Date()
+      })
+
       const socketIds = Array.from(onlineUsers.values())
       socketIds.forEach((socketId) => {
-        io.to(socketId).emit('newNotification', {
-          content: `Group name changed to '${data.name}'`,
+        io.to(socketId).emit(ENameEvent.NEW_NOTIFICATION, {
+          content: `Group name changed to '${newName}'`,
           groupId
         })
       })
     }
+
     return {
       result,
       message
     }
   },
 
-  updateLeaveGroup: async (groupId: string, userId: string, newOwnerId?: string | null) => {
+  updateLeaveGroup: async (groupId: string, userId: string, newOwnerId?: string | null, oldOwnerId?: string | null) => {
     const result = await GroupMember.findOneAndDelete({ groupId, userId })
     await GroupMember.findOneAndUpdate({ groupId, userId: newOwnerId }, { role: 'admin' }, { new: true })
     await Group.findByIdAndUpdate(groupId, { ownerId: newOwnerId }, { new: true })
@@ -170,10 +192,18 @@ export const groupService = {
     if (user) {
       message = await messageService.createSystemMessage(groupId, `${user.username} has left the group`)
       await notificationService.createNotification({ content: `${user.username} has left the group`, groupId })
+
+      // socket
       const io = getIO()
+      io.to(groupId).emit(ENameEvent.KICK_USER, { oldOwnerId, groupId, userId })
+      io.to(groupId).emit(ENameEvent.RECEIVE_MESSAGE, {
+        ...message.toObject(),
+        groupId,
+        createdAt: new Date()
+      })
       const socketIds = Array.from(onlineUsers.values())
       socketIds.forEach((socketId) => {
-        io.to(socketId).emit('newNotification', {
+        io.to(socketId).emit(ENameEvent.NEW_NOTIFICATION, {
           content: `${user.username} has left the group`,
           groupId
         })
@@ -185,9 +215,9 @@ export const groupService = {
     }
   },
 
-  addMember: async (groupId: string, data: string[]) => {
+  addMember: async (groupId: string, users: string[], group: IGroup, userId: string) => {
     const memberGroup = await Promise.all(
-      data.map(async (uId) => {
+      users.map(async (uId) => {
         const member = new GroupMember({
           userId: uId,
           groupId,
@@ -201,21 +231,41 @@ export const groupService = {
     const listUserId = memberGroup.map((u) => u.userId)
     const res = await axios.post(`${process.env.AUTH_SERVICE_URL}/internal/users`, { listUserId })
     const result = res.data.data
-    const group = await Group.findById(groupId).lean()
+    const groupData = await Group.findById(groupId).lean()
     const message = await messageService.createSystemMessage(
       groupId,
-      `Added ${result.map((u: any) => u.username).join(', ')} to the group ${group?.name}`
+      `Added ${result.map((u: any) => u.username).join(', ')} to the group ${groupData?.name}`
     )
     await notificationService.createNotification({
-      content: `Added new member to the group ${group?.name}`,
+      content: `Added new member to the group ${groupData?.name}`,
       groupId
     })
 
+    // socket
     const io = getIO()
+    const listMemberOnline: string[] = []
+    const listUser = result
+    listUser.map((user: IUser) => {
+      const socketId = onlineUsers.get(user._id)
+      if (socketId) {
+        listMemberOnline.push(user._id)
+        io.to(socketId).emit(ENameEvent.ADD_MEMBER, {
+          group,
+          listUser,
+          userId
+        })
+      }
+    })
+    io.to(groupId).emit(ENameEvent.ADD_MEMBER, { group, listUser, userId, listMemberOnline })
+    io.to(groupId).emit(ENameEvent.RECEIVE_MESSAGE, {
+      ...message.toObject(),
+      groupId,
+      createdAt: new Date()
+    })
     const socketIds = Array.from(onlineUsers.values())
     socketIds.forEach((socketId) => {
-      io.to(socketId).emit('newNotification', {
-        content: `Added new member to the group ${group?.name}`,
+      io.to(socketId).emit(ENameEvent.NEW_NOTIFICATION, {
+        content: `Added new member to the group ${groupData?.name}`,
         groupId
       })
     })
@@ -226,7 +276,7 @@ export const groupService = {
     }
   },
 
-  deleteMemberInGroup: async (groupId: string, userId: string) => {
+  deleteMemberInGroup: async (groupId: string, userId: string, ownerId: string) => {
     const result = await GroupMember.findOneAndDelete({ groupId, userId })
     const res = await axios.get(`${process.env.AUTH_SERVICE_URL}/internal/users/${userId}`)
     const user = res.data.data
@@ -238,22 +288,31 @@ export const groupService = {
         content: `Admin was removed ${user.username} from the group ${group?.name}`,
         groupId
       })
+
+      // socket
       const io = getIO()
+      io.to(groupId).emit(ENameEvent.KICK_USER, { groupId, userId, ownerId })
+      io.to(groupId).emit(ENameEvent.RECEIVE_MESSAGE, {
+        ...message.toObject(),
+        groupId,
+        createdAt: new Date()
+      })
       const socketIds = Array.from(onlineUsers.values())
       socketIds.forEach((socketId) => {
-        io.to(socketId).emit('newNotification', {
+        io.to(socketId).emit(ENameEvent.NEW_NOTIFICATION, {
           content: `Admin was removed ${user.username} from the group ${group?.name}`,
           groupId
         })
       })
     }
+
     return {
       result,
       message
     }
   },
 
-  addTagForGroup: async (groupId: string, userId: string, tag: string) => {
+  addTag: async (groupId: string, userId: string, tag: string) => {
     const existingTag = await GroupMember.findOne({ groupId, userId, tag }).lean()
     let groupMember
     if (!existingTag) {
@@ -279,25 +338,38 @@ export const groupService = {
     return listGroup
   },
 
-  updateThemeGroup: async (groupId: string, data: { theme: string }) => {
+  updateThemeGroup: async (groupId: string, theme: string, senderId: string, senderName: string) => {
     const oldGroup = await Group.findById(groupId)
     if (!oldGroup) return false
-    const result = await Group.findByIdAndUpdate(groupId, { theme: data.theme }, { new: true }).lean()
+    const result = await Group.findByIdAndUpdate(groupId, { theme }, { new: true }).lean()
     if (!result) return false
 
     let message
-    if (oldGroup.theme !== data.theme) {
-      message = await messageService.createSystemMessage(groupId, `Group theme changed to '${data.theme}'`)
+    if (oldGroup.theme !== theme) {
+      message = await messageService.createSystemMessage(groupId, `Group theme changed to '${theme}'`)
       await notificationService.createNotification({
-        content: `The theme of the group ${oldGroup.name} has been changed to '${data.theme}'`,
+        content: `The theme of the group ${oldGroup.name} has been changed to '${theme}'`,
         groupId: oldGroup._id.toString()
       })
 
+      // socket
       const io = getIO()
+      const dataSocket = {
+        senderId,
+        senderName,
+        groupId,
+        theme: listTheme.find((t) => t.name === result.theme)
+      }
+      io.to(groupId).emit(ENameEvent.CHANGE_THEME, dataSocket)
+      io.to(groupId).emit(ENameEvent.RECEIVE_MESSAGE, {
+        ...message.toObject(),
+        groupId,
+        createdAt: new Date()
+      })
       const socketIds = Array.from(onlineUsers.values())
       socketIds.forEach((socketId) => {
-        io.to(socketId).emit('newNotification', {
-          content: `Group theme changed to '${data.theme}'`,
+        io.to(socketId).emit(ENameEvent.NEW_NOTIFICATION, {
+          content: `Group theme changed to '${theme}'`,
           groupId
         })
       })

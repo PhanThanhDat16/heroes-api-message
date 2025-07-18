@@ -8,6 +8,7 @@ const messageSchema = new Schema(
     groupId: { type: mongoose.Schema.ObjectId, required: true, ref: 'Group' },
     quantityReact: { type: Number, default: 0 },
     isEdited: { type: Boolean, default: false },
+    // replyToSenderId: { type: String, default: null },
     replyToMessageId: { type: String, default: null },
     replyToContent: { type: String, default: null },
     replyToSenderName: { type: String, default: null },
@@ -15,7 +16,7 @@ const messageSchema = new Schema(
     type: { type: String, enum: ['text', 'image', 'excel', 'word', 'system'], default: 'text' },
     deleteForUser: { type: [String], default: [] },
     readUsers: { type: [String], default: [] },
-    status: { type: String, enum: ['sent', 'read'] , default: 'sent' }
+    status: { type: String, enum: ['sent', 'read'], default: 'sent' }
   },
   {
     versionKey: false,
@@ -34,9 +35,10 @@ export interface IMessageModel extends Document {
   groupId: string
   quantityReact: number
   isEdited: boolean
+  // replyToSenderId: string | null
   replyToMessageId: string | null
-  replyToContent: string | null
   replyToSenderName: string | null
+  replyToContent: string | null
   replyToType: string | null
   type: string
   deleteForUser: string[]
