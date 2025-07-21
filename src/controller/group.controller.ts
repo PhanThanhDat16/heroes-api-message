@@ -5,8 +5,9 @@ import axios from 'axios'
 import asyncHandler from 'express-async-handler'
 import { IRequestWithUser } from '~/middleware/auth.middleware'
 import { GroupMember } from '~/model/grouMember'
-import { getIO, onlineUsers } from '~/socket/socket'
+import { getIO } from '~/socket/socket'
 import { ENameEvent } from '~/types/nameEventSocket'
+import { getOnlineUserSocketId } from '~/redis/redisOnlineUserService'
 
 export const groupController = {
   createGroup: asyncHandler(async (req: Request, res: Response) => {
@@ -36,9 +37,10 @@ export const groupController = {
       members
     }
     const io = getIO()
-    members.forEach((member: any) => {
+    members.forEach( async (member: any) => {
       const memberId = member
-      const memberSocketId = onlineUsers.get(memberId)
+      // const memberSocketId = onlineUsers.get(memberId)
+      const memberSocketId =  await getOnlineUserSocketId(memberId)
       if (memberSocketId) {
         io.to(memberSocketId).emit(ENameEvent.NEW_GROUP, dataSocket)
       }

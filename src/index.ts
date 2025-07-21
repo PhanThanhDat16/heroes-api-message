@@ -9,9 +9,11 @@ import { routerNotification } from './router/notificationAPI'
 import { routerGroup } from './router/groupAPI'
 import { routerMessage } from './router/messageAPI'
 import { routerUpload } from './router/uploadAPI'
+import { connectRedis } from './redis/redisOnlineUserService'
 
 dotenv.config()
 connectMongoDB()
+connectRedis()
 
 const app = express()
 const server = http.createServer(app)

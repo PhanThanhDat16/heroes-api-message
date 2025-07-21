@@ -5,11 +5,12 @@ import { Message } from '~/model/message'
 import { IGroup, IGroupCreate } from '~/types/group'
 import { messageService } from './message.service'
 import { notificationService } from './notification.service'
-import { getIO, onlineUsers } from '~/socket/socket'
+import { getIO } from '~/socket/socket'
 import { Notification } from '~/model/notification'
 import { listTheme } from '~/constants/theme.constants'
 import { IUser } from '~/types/user'
 import { ENameEvent } from '~/types/nameEventSocket'
+import { getAllOnlineUsers, getOnlineUserSocketId } from '~/redis/redisOnlineUserService'
 
 export const groupService = {
   createGroup: async ({ name, ownerId, members }: IGroupCreate) => {
@@ -41,7 +42,8 @@ export const groupService = {
     })
 
     const io = getIO()
-    const socketIds = Array.from(onlineUsers.values())
+    // const socketIds = Array.from(onlineUsers.values())
+    const socketIds = await getAllOnlineUsers()
     socketIds.forEach((socketId) => {
       io.to(socketId).emit(ENameEvent.NEW_NOTIFICATION, {
         content: `You have a new group with name ${name}`,
@@ -167,7 +169,8 @@ export const groupService = {
         createdAt: new Date()
       })
 
-      const socketIds = Array.from(onlineUsers.values())
+      // const socketIds = Array.from(onlineUsers.values())
+      const socketIds = await getAllOnlineUsers()
       socketIds.forEach((socketId) => {
         io.to(socketId).emit(ENameEvent.NEW_NOTIFICATION, {
           content: `Group name changed to '${newName}'`,
@@ -201,7 +204,8 @@ export const groupService = {
         groupId,
         createdAt: new Date()
       })
-      const socketIds = Array.from(onlineUsers.values())
+      // const socketIds = Array.from(onlineUsers.values())
+      const socketIds = await getAllOnlineUsers()
       socketIds.forEach((socketId) => {
         io.to(socketId).emit(ENameEvent.NEW_NOTIFICATION, {
           content: `${user.username} has left the group`,
@@ -245,8 +249,9 @@ export const groupService = {
     const io = getIO()
     const listMemberOnline: string[] = []
     const listUser = result
-    listUser.map((user: IUser) => {
-      const socketId = onlineUsers.get(user._id)
+    listUser.map(async (user: IUser) => {
+      // const socketId = onlineUsers.get(user._id)
+      const socketId = await getOnlineUserSocketId(user._id)
       if (socketId) {
         listMemberOnline.push(user._id)
         io.to(socketId).emit(ENameEvent.ADD_MEMBER, {
@@ -262,7 +267,8 @@ export const groupService = {
       groupId,
       createdAt: new Date()
     })
-    const socketIds = Array.from(onlineUsers.values())
+    // const socketIds = Array.from(onlineUsers.values())
+    const socketIds = await getAllOnlineUsers()
     socketIds.forEach((socketId) => {
       io.to(socketId).emit(ENameEvent.NEW_NOTIFICATION, {
         content: `Added new member to the group ${groupData?.name}`,
@@ -297,7 +303,8 @@ export const groupService = {
         groupId,
         createdAt: new Date()
       })
-      const socketIds = Array.from(onlineUsers.values())
+      // const socketIds = Array.from(onlineUsers.values())
+      const socketIds = await getAllOnlineUsers()
       socketIds.forEach((socketId) => {
         io.to(socketId).emit(ENameEvent.NEW_NOTIFICATION, {
           content: `Admin was removed ${user.username} from the group ${group?.name}`,
@@ -366,7 +373,8 @@ export const groupService = {
         groupId,
         createdAt: new Date()
       })
-      const socketIds = Array.from(onlineUsers.values())
+      // const socketIds = Array.from(onlineUsers.values())
+      const socketIds = await getAllOnlineUsers()
       socketIds.forEach((socketId) => {
         io.to(socketId).emit(ENameEvent.NEW_NOTIFICATION, {
           content: `Group theme changed to '${theme}'`,
