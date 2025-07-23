@@ -74,19 +74,18 @@ export const setupSocket = async (server: http.Server) => {
     socket.on(ENameEvent.USER_ONLINE, async (data) => {
       const { userId } = data
       await setOnlineUser(userId, socket.id)
-
       const onlineUserIds = await getAllOnlineUsers()
-      io.emit('updateOnlineUsers', onlineUserIds)
+      io.emit(ENameEvent.UPDATE_ONLINE_USER, onlineUserIds)
     })
 
     socket.on(ENameEvent.LEAVE_GROUP, (data) => {
       socket.leave(data.groupId)
     })
 
-    socket.on(ENameEvent.DISCONNECT, async () => {
+    socket.on('disconnect', async () => {
       await removeOnlineUser(socket.id)
       const onlineUserIds = await getAllOnlineUsers()
-      io.emit('updateOnlineUsers', onlineUserIds)
+      io.emit(ENameEvent.UPDATE_ONLINE_USER, onlineUserIds)
       console.log('socket disconnected:', socket.id)
     })
   })
