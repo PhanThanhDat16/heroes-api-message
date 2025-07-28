@@ -15,9 +15,7 @@ const notificationSchema = new Schema(
 )
 
 notificationSchema.index({ userId: 1 })
-
 export const Notification = mongoose.model('Notification', notificationSchema)
-
 export interface INotificationModel extends Document {
   content: string
   userId: string

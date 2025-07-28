@@ -23,11 +23,6 @@ export const notificationService = {
     return notification
   },
 
-  updateReadNotification: async (userId: string, notiId: string) => {
-    const noti = await Notification.findOneAndUpdate({ _id: notiId, userId }, { readUsers: true }, { new: true })
-    return noti
-  },
-
   deleteAllNotification: async (userId: string) => {
     await Notification.deleteMany({ userId })
     return true

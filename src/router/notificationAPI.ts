@@ -8,7 +8,6 @@ const router = express.Router()
 router.post('/', notificationController.createNotification)
 router.get('/user/:id', notificationController.getNotifications)
 router.delete('/user/:id', notificationController.deleteAllNotification)
-router.put('/:id/user/:userId/read', notificationController.updateReadNotification)
 router.put('/user/:userId/read-all', notificationController.readAllNotifications)
 router.put('/:id/user/read', requireAuth, notificationController.readNotifications)
 

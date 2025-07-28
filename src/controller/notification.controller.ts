@@ -23,16 +23,6 @@ export const notificationController = {
     })
   }),
 
-  updateReadNotification: asyncHandler(async (req: Request, res: Response) => {
-    const userId = req.params.userId
-    const notiId = req.params.id
-    const noti = await notificationService.updateReadNotification(userId, notiId)
-    res.status(EHttpStatus.OK).json({
-      message: 'Update read notification success',
-      data: noti
-    })
-  }),
-
   deleteAllNotification: asyncHandler(async (req: Request, res: Response) => {
     const userId = req.params.id
     await notificationService.deleteAllNotification(userId)

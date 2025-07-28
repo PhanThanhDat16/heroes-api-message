@@ -5,6 +5,10 @@ import axios from 'axios'
 import asyncHandler from 'express-async-handler'
 import { IRequestWithUser } from '~/middleware/auth.middleware'
 import { GroupMember } from '~/model/grouMember'
+import { ENameEvent } from '~/types/nameEventSocket'
+import { getIO } from '~/socket/socket'
+// import { getIO, onlineUsers } from '~/socket/socket'
+import { getOnlineUserSocketId } from '~/redis/redisOnlineUserService'
 
 export const groupController = {
   createGroup: asyncHandler(async (req: Request, res: Response) => {
@@ -27,6 +31,21 @@ export const groupController = {
       }
     }
     const group = await groupService.createGroup({ name, ownerId, members })
+
+    // socket
+    const dataSocket = {
+      ...group,
+      members
+    }
+    const io = getIO()
+    members.forEach(async (member: any) => {
+      const memberId = member
+      // const memberSocketId = onlineUsers.get(memberId)
+      const memberSocketId = await getOnlineUserSocketId(memberId)
+      if (memberSocketId) {
+        io.to(memberSocketId).emit(ENameEvent.NEW_GROUP, dataSocket)
+      }
+    })
     res.status(EHttpStatus.OK).json({
       message: 'Group created successfully',
       data: group
@@ -114,7 +133,6 @@ export const groupController = {
     }
     const userId = userJWT.id
 
-
     const group = groupService.getGroupDetail(groupId, userId)
     if (!group) {
       res.status(EHttpStatus.NOT_FOUND).json({
@@ -143,8 +161,8 @@ export const groupController = {
 
   updateGroup: asyncHandler(async (req: Request, res: Response) => {
     const groupId = req.params.id
-    const data = req.body
-    const group = await groupService.updateGroup(groupId, data)
+    const { name: newName, senderId, senderName } = req.body
+    const group = await groupService.updateGroup(groupId, newName, senderId, senderName)
     if (!group) {
       res.status(EHttpStatus.NOT_FOUND).json({
         message: 'Group not found'
@@ -160,7 +178,7 @@ export const groupController = {
 
   addMemberGroup: asyncHandler(async (req: Request, res: Response) => {
     const groupId = req.params.id
-    const data = req.body
+    const { users, group } = req.body
     const { user: userJWT } = req as IRequestWithUser
     if (!userJWT) {
       res.status(EHttpStatus.UNAUTHORIZED).json({
@@ -170,14 +188,15 @@ export const groupController = {
     }
     const userId = userJWT.id
 
-    const group = await groupService.getGroupDetail(groupId, userId)
-    if (!group) {
+    const checkGroup = await groupService.getGroupDetail(groupId, userId)
+    if (!checkGroup) {
       res.status(EHttpStatus.NOT_FOUND).json({
         message: `Group not found`
       })
       return
     }
-    const newMember = await groupService.addMember(groupId, data)
+
+    const newMember = await groupService.addMember(groupId, users, group, userId)
     res.status(EHttpStatus.OK).json({
       message: 'Add member successfully',
       data: {
@@ -188,9 +207,9 @@ export const groupController = {
 
   updateLeaveGroup: asyncHandler(async (req: Request, res: Response) => {
     const { id: groupId, userId } = req.params
-    const { ownerId: newOwnerId } = req.body
+    const { ownerId: newOwnerId, oldOwnerId } = req.body
 
-    const group = await groupService.updateLeaveGroup(groupId, userId, newOwnerId)
+    const group = await groupService.updateLeaveGroup(groupId, userId, newOwnerId, oldOwnerId)
     res.status(EHttpStatus.OK).json({
       message: 'Update successfully',
       data: { ...group }
@@ -199,6 +218,7 @@ export const groupController = {
 
   deleteMemberInGroup: asyncHandler(async (req: Request, res: Response) => {
     const { id: groupId, memberId: userId } = req.params
+    const { ownerId } = req.body
     const { user: userJWT } = req as IRequestWithUser
     if (!userJWT) {
       res.status(EHttpStatus.UNAUTHORIZED).json({
@@ -215,7 +235,7 @@ export const groupController = {
       })
       return
     }
-    const result = await groupService.deleteMemberInGroup(groupId, userId)
+    const result = await groupService.deleteMemberInGroup(groupId, userId, ownerId)
     res.status(EHttpStatus.OK).json({
       message: 'Delete successfully',
       data: { ...result }
@@ -225,7 +245,7 @@ export const groupController = {
   addTagForGroup: asyncHandler(async (req: Request, res: Response) => {
     const { id: groupId, userId } = req.params
     const { tag } = req.body
-    const groupMember = await groupService.addTagForGroup(groupId, userId, tag)
+    const groupMember = await groupService.addTag(groupId, userId, tag)
     res.status(EHttpStatus.OK).json({
       message: 'Delete successfully',
       data: groupMember
@@ -251,8 +271,8 @@ export const groupController = {
 
   updateThemeGroup: asyncHandler(async (req: Request, res: Response) => {
     const groupId = req.params.id
-    const data = req.body
-    const group = await groupService.updateThemeGroup(groupId, data)
+    const { theme, senderId, senderName } = req.body
+    const group = await groupService.updateThemeGroup(groupId, theme, senderId, senderName)
     if (!group) {
       res.status(EHttpStatus.NOT_FOUND).json({
         message: 'Group not found'
